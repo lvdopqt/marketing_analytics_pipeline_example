@@ -22,7 +22,7 @@ jobs:
       # Use the Python version specified in your requirements or commonly used in your project
       uses: actions/setup-python@v5 # Use v5 for setup-python action
       with:
-        python-version: '3.9' # Specify the Python version, e.g., '3.9', '3.10', '3.11', '3.12'
+        python-version: '3.12'
 
     - name: Install dependencies
       run: |
