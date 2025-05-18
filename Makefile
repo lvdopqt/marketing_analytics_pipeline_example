@@ -12,8 +12,7 @@ help:
 	@echo "  make generate-data        - Run the script to generate mock data"
 	@echo "  make run-pipeline         - Execute the main marketing pipeline script"
 	@echo "  make run-dashboard        - Run the Streamlit analytics dashboard"
-	@echo ""
-	# You could add more targets here later, e.g., for running tests
+	@echo "  make test                 - Run unit tests"
 
 # Install Python dependencies from requirements.txt
 install-requirements:
