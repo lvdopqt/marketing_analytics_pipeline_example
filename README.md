@@ -73,21 +73,35 @@ Remember to activate the virtual environment every time you open a new terminal 
 
 The project uses a Makefile to simplify running common tasks. Ensure you have `make` installed on your system.
 
-1. **Activate your virtual environment** (if you haven't already).
+1. **Generating Mock Data**
 
-2. **Run the full pipeline:**
+    To quickly populate the `data/raw` directory with sample data for testing the pipeline, you can use the provided script and Makefile command.
+
+    Run the following command from the project's root directory:
+
+    ```bash
+    make generate-data
+    ```
+
+    This command executes the scripts/generate_mock_data.py script, which will generate CSV and JSON files for clients, ads, email campaigns, web traffic, and revenue in the data/raw folder. Running the command multiple times will add more data to the existing files, simulating data arriving over time.
+    **NOTE**: There's already some mock data in the project for it to be ready to use
+
+
+2. **Activate your virtual environment** (if you haven't already).
+
+3. **Run the full pipeline:**
    ```bash
    make run-pipeline
    ```
    This command executes the `run_pipeline.py` script, which performs ingestion, transformation, loading, and analytics steps sequentially.
 
-3. **Run the tests:**
+4. **Run the tests:**
    ```bash
    make test
    ```
    This command executes pytest to run all tests in the `tests/` directory. Ensure all tests pass before deploying or trusting the pipeline output.
 
-4. **Run the Streamlit dashboard:**
+5. **Run the Streamlit dashboard:**
    ```bash
    make run-dashboard
    ```
