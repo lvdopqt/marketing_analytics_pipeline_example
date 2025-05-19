@@ -1,9 +1,20 @@
-# ./run_pipeline.py
-
 import os
 import logging
 from datetime import datetime
+import pandas as pd
+import sys
+from typing import Optional, Dict, Any
 
+# Import Prefect components
+from prefect import flow, task
+from prefect.task_runners import SequentialTaskRunner
+
+# Add the project root directory to the Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, '..'))
+sys.path.insert(0, project_root)
+
+# Import functions from your src directory
 from src.ingestion.google_ads import ingest_google_ads_csv
 from src.ingestion.facebook_ads import ingest_facebook_ads_json
 from src.ingestion.email_campaigns import ingest_email_campaigns_csv
@@ -21,6 +32,8 @@ from src.loading.file_loader import load_to_parquet
 
 from src.analytics.report_generator import generate_summary_reports
 from src.analytics.lift_analysis import estimate_cross_channel_lift
+
+from src.analytics.dashboard import load_analytics_data
 
 
 # --- Logging Configuration ---
@@ -42,7 +55,7 @@ FILE_PATHS = {
     'revenue': os.path.join(RAW_DATA_DIR, 'revenue.csv'),
 }
 
-FINAL_OUTPUT = {
+FINAL_OUTPUT: Dict[str, Dict[str, Optional[str]]] = {
     'sqlite': {
         'path': 'data/analytics.db',
         'table': 'marketing_analytics',
@@ -55,40 +68,63 @@ FINAL_OUTPUT = {
 
 LIFT_REPORT_PATH = os.path.join(REPORTS_DIR, 'cross_channel_lift_report.csv')
 
-# --- Pipeline Steps ---
-def ingest_data():
+
+# --- Pipeline Tasks ---
+@task
+def ingest_data_task() -> Optional[Dict[str, pd.DataFrame]]:
     logging.info("Step: Ingestion")
     data = {}
     try:
-        data['google_ads'] = ingest_google_ads_csv(FILE_PATHS['google_ads'])
-        data['facebook_ads'] = ingest_facebook_ads_json(FILE_PATHS['facebook_ads'])
-        data['email_campaigns'] = ingest_email_campaigns_csv(FILE_PATHS['email_campaigns'])
-        data['web_traffic'] = ingest_web_traffic_csv(FILE_PATHS['web_traffic'])
-        data['clients'] = ingest_clients_csv(FILE_PATHS['clients'])
-        data['revenue'] = ingest_revenue_csv(FILE_PATHS['revenue'])
+        for key, file_path in FILE_PATHS.items():
+            if not os.path.exists(file_path):
+                logging.warning(f"Raw data file not found: {file_path}. Skipping ingestion for {key}.")
+                data[key] = pd.DataFrame()
+            else:
+                if key == 'google_ads': data[key] = ingest_google_ads_csv(file_path)
+                elif key == 'facebook_ads': data[key] = ingest_facebook_ads_json(file_path)
+                elif key == 'email_campaigns': data[key] = ingest_email_campaigns_csv(file_path)
+                elif key == 'web_traffic': data[key] = ingest_web_traffic_csv(file_path)
+                elif key == 'clients': data[key] = ingest_clients_csv(file_path)
+                elif key == 'revenue': data[key] = ingest_revenue_csv(FILE_PATHS['revenue'])
+                else: logging.warning(f"Unknown data source key: {key}")
 
-        # Validate essential inputs
+
         essential_keys = ['google_ads', 'facebook_ads', 'email_campaigns', 'web_traffic', 'clients']
-        if any(data[k] is None or data[k].empty for k in essential_keys):
-            logging.warning("One or more essential sources are empty or missing.")
-            # Optional: return None here to abort
+        if any(data.get(k) is None or (isinstance(data.get(k), pd.DataFrame) and data.get(k).empty) for k in essential_keys):
+             logging.warning("One or more essential sources are empty or missing after ingestion.")
+             return data
+
         return data
     except FileNotFoundError as e:
         logging.error(f"Missing file during ingestion: {e}")
+        raise e
     except Exception as e:
         logging.error(f"Unexpected error during ingestion: {e}")
-    return None
+        raise e
 
 
-def transform_data(dataframes):
+@task
+def transform_data_task(dataframes: Optional[Dict[str, pd.DataFrame]]) -> Optional[pd.DataFrame]:
     logging.info("Step: Transformation")
+    if not dataframes:
+        logging.error("No dataframes provided for transformation.")
+        return None
+
     try:
         cleaned = clean_marketing_data(dataframes)
+
+        essential_cleaned_keys = [k for k in dataframes.keys() if k != 'revenue']
+        if any(cleaned.get(k) is None or (isinstance(cleaned.get(k), pd.DataFrame) and cleaned.get(k).empty) for k in essential_cleaned_keys):
+             logging.error("One or more essential cleaned sources are empty or missing.")
+             return None
+
         joined = join_marketing_data(cleaned)
 
         if joined is None or joined.empty:
             logging.error("Joined DataFrame is empty.")
-            return None
+            expected_joined_cols = joined.columns.tolist() if joined is not None and not joined.empty else []
+            return pd.DataFrame(columns=expected_joined_cols)
+
 
         metrics = calculate_key_metrics(joined)
         revenue = cleaned.get('revenue')
@@ -97,15 +133,20 @@ def transform_data(dataframes):
         return attributed
     except Exception as e:
         logging.error(f"Unexpected error during transformation: {e}")
+        raise e
+
+
+@task
+def load_data_task(df: Optional[pd.DataFrame]) -> Optional[Dict[str, Optional[str]]]:
+    logging.info("Step: Loading")
+    if df is None or df.empty:
+        logging.warning("No data to load.")
         return None
 
-
-def load_data(df):
-    logging.info("Step: Loading")
     output = FINAL_OUTPUT[LOAD_FORMAT]
 
     try:
-        os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(output['path']), exist_ok=True)
         if LOAD_FORMAT == 'sqlite':
             load_to_sqlite(df, output['path'], output['table'])
         elif LOAD_FORMAT == 'parquet':
@@ -114,10 +155,11 @@ def load_data(df):
         return output
     except Exception as e:
         logging.error(f"Error during loading: {e}")
-        return None
+        raise e
 
 
-def analyze_data(output_config):
+@task
+def analyze_data_task(output_config: Optional[Dict[str, Optional[str]]]):
     logging.info("Step: Analytics")
     if not output_config:
         logging.warning("No output config provided for analytics.")
@@ -126,33 +168,22 @@ def analyze_data(output_config):
     try:
         os.makedirs(REPORTS_DIR, exist_ok=True)
 
-        # Load the final processed data to perform analysis on
         final_df = None
         try:
-             if output_config['path'].endswith('.db'):
-                  # Reuse dashboard's loading logic if available, or implement simple read
-                  from src.analytics.dashboard import load_analytics_data # Assuming this function exists and works
-                  final_df = load_analytics_data(
-                      output_config['path'],
-                      LOAD_FORMAT,
-                      output_config.get('table')
-                  )
-             elif output_config['path'].endswith('.parquet'):
-                  final_df = pd.read_parquet(output_config['path'])
-             else:
-                  logging.error(f"Unsupported output format for analysis: {output_config['path']}")
-                  return # Exit if format is unsupported
-
+             final_df = load_analytics_data(
+                 output_config['path'],
+                 LOAD_FORMAT,
+                 output_config.get('table')
+             )
         except Exception as e:
              logging.error(f"Error reading final data for analysis: {e}")
-             final_df = None # Ensure final_df is None on error
+             return
 
 
         if final_df is None or final_df.empty:
             logging.warning("No final data loaded for analysis. Skipping reports and lift analysis.")
             return
 
-        # Generate summary reports
         generate_summary_reports(
             output_config['path'],
             REPORTS_DIR,
@@ -161,11 +192,9 @@ def analyze_data(output_config):
         )
         logging.info("Summary reports generated.")
 
-        # Perform cross-channel lift analysis
         lift_report_df = estimate_cross_channel_lift(final_df)
 
         if lift_report_df is not None and not lift_report_df.empty:
-            # Save the lift analysis report
             lift_report_df.to_csv(LIFT_REPORT_PATH, index=False)
             logging.info(f"Cross-channel lift report generated: {LIFT_REPORT_PATH}")
         else:
@@ -173,29 +202,41 @@ def analyze_data(output_config):
 
     except Exception as e:
         logging.error(f"Error during analytics step: {e}")
+        raise e
 
 
-def run_pipeline():
-    logging.info("Marketing pipeline started.")
-    data = ingest_data()
-    if not data:
-        logging.error("Ingestion failed. Aborting pipeline.")
-        return
+# --- Prefect Flow Definition ---
+@flow(name="Marketing Analytics Pipeline", task_runner=SequentialTaskRunner())
+def marketing_pipeline_flow():
+    logging.info("Prefect Flow: Marketing pipeline started.")
 
-    transformed = transform_data(data)
-    if transformed is None:
-        logging.error("Transformation failed. Aborting pipeline.")
-        return
+    ingested_data = ingest_data_task()
 
-    output_config = load_data(transformed)
-    if not output_config:
-        logging.error("Loading failed. Aborting pipeline.")
-        return
-
-    analyze_data(output_config)
-    logging.info("Marketing pipeline completed successfully.")
+    essential_keys = ['google_ads', 'facebook_ads', 'email_campaigns', 'web_traffic', 'clients']
+    if ingested_data is None or any(ingested_data.get(k) is None or (isinstance(ingested_data.get(k), pd.DataFrame) and ingested_data.get(k).empty) for k in essential_keys):
+         logging.error("Essential data ingestion failed or resulted in empty data. Transformation and subsequent tasks will likely be skipped.")
+         transformed_data = None
+    else:
+         transformed_data = transform_data_task(ingested_data)
 
 
-# --- Entrypoint ---
+    if transformed_data is None:
+         logging.error("Transformation task failed or returned None. Loading and Analytics tasks will likely be skipped.")
+         output_config = None
+    else:
+         output_config = load_data_task(transformed_data)
+
+
+    if output_config is None:
+         logging.error("Loading task failed or returned None. Analytics task will likely be skipped.")
+         pass
+
+
+    analyze_data_task(output_config)
+
+    logging.info("Prefect Flow: Marketing pipeline completed.")
+
+
+# --- Entrypoint to run the Flow ---
 if __name__ == '__main__':
-    run_pipeline()
+    marketing_pipeline_flow()
