@@ -84,7 +84,17 @@ The project uses a `Makefile` to simplify running common tasks.
     ```
     This command starts the Streamlit server for the dashboard. Once started, it will provide a local URL (usually `http://localhost:8501`) that you can open in your web browser to interact with the dashboard.
 
-5.  **Run the tests:**
+5.  **Run the tests:** \
+    As the tests run locally, you may need to use the virtual environment and install the dependencies to run it. So create it and activate:
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    ```
+    Install the requirements:
+    ```bash
+    pip install -r requirements.txt
+    ```
+    And finally run the tests:
     ```bash
     make test
     ```
