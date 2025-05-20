@@ -1,114 +1,69 @@
 services:
-  # Prefect Server service (UI and API)
+  
   prefect-server:
-    image: prefecthq/prefect:2-latest # Using the official Prefect image
-    command: prefect server start --host 0.0.0.0 # Start the server listening on all interfaces
+    image: prefecthq/prefect:2-latest 
+    command: prefect server start --host 0.0.0.0 
     ports:
-      # Map the Prefect UI and API port to your host
       - "4200:4200"
     environment:
-      PREFECT_LOGGING_LEVEL: INFO # Set logging level
-      # If you were using a database service like postgres, you'd add the URL here:
-      # PREFECT_ORION_DATABASE_CONNECTION_URL: postgresql+asyncpg://user:password@postgres/db_name
-      # Set PROJECT_ROOT for the server itself, though flows run by agent will use agent's env
+      PREFECT_LOGGING_LEVEL: INFO
       PROJECT_ROOT: /app
-      # Disable the Streamlit warning for the server process
       STREAMLIT_SHOW_WARNING_ON_DIRECT_EXECUTION: "false"
     volumes:
-      # Persistent volume for Prefect server data (e.g., SQLite DB if used)
       - prefect-server-data:/root/.prefect
-      # Mount your entire project code into the container at /app
-      # This covers dags, src, data, config, logs, etc.
       - .:/app
-    # If using a database service, add depends_on here:
-    # depends_on:
-    #   postgres:
-    #     condition: service_healthy
-    restart: always # Ensure the service restarts if it crashes
+    restart: always 
 
-  # Prefect Agent service
   prefect-agent:
     build:
       context: .
-      dockerfile: Dockerfile.agent # Reverted to Dockerfile.agent as requested
+      dockerfile: Dockerfile.agent 
     depends_on:
-      # Ensure the server is started before the agent tries to connect or run CLI commands
       prefect-server:
         condition: service_started
     command: >
       /bin/bash -c "
-        # Add a sufficient sleep to give the server time to initialize
         echo 'Waiting for Prefect server to be ready before initialization and deployment...'
-        sleep 15; # Increased sleep time for robustness
-
-        # --- Work pool creation and deployment commands moved here ---
+        sleep 15; 
         echo 'Attempting to create work pool default-agent-pool...'
-        # Use || true to prevent the script from stopping if the pool already exists or creation fails
         prefect work-pool create 'default-agent-pool' || echo 'Work pool already exists or creation failed (ignored).'
         echo 'Work pool creation command finished.'
-
         echo 'Attempting to build and apply deployment marketing-pipeline-docker...'
-        # Set PREFECT_ORION_URL to connect to the server
-        # CRITICAL ADDITION: Added --override env.PROJECT_ROOT="/app" to ensure the flow inside the container
-        # knows its project root, aligning with your run_pipeline.py changes.
         cd /app && PREFECT_ORION_URL=http://prefect-server:4200/api prefect deployment build /app/scripts/run_pipeline.py:marketing_pipeline_flow --name marketing-pipeline-docker --apply --override env.PROJECT_ROOT=\"/app\" || echo 'Deployment failed (ignored).'
         echo 'Deployment command finished.'
-        # --- End of initialization/deployment commands ---
-
         echo 'Starting agent...'
-        # Start the Prefect agent listening on the 'default-agent-pool'
-        # NOTE: The 'agent' command is deprecated and will be replaced by 'worker' in the future.
         prefect agent start --pool 'default-agent-pool'
       "
     environment:
-      # Configure the agent to connect to the Prefect server
-      # Use the service name 'prefect-server' as the hostname
-      PREFECT_API_URL: http://prefect-server:4200/api # Agent connects to the server's API on port 4200
-      # Ensure the agent can find your project code when running flow runs
+      PREFECT_API_URL: http://prefect-server:4200/api 
       PYTHONPATH: /app
-      # Set PROJECT_ROOT for flow runs executed by this agent
       PROJECT_ROOT: /app
-      # Disable the Streamlit warning for the agent process
       STREAMLIT_SHOW_WARNING_ON_DIRECT_EXECUTION: "false"
     volumes:
-      # Mount the Docker socket to allow the agent to create new containers for flow runs
       - /var/run/docker.sock:/var/run/docker.sock
-      # Persistent volume for agent data (less critical than server data)
       - prefect-agent-data:/root/.prefect
-      # Mount your entire project code into the container at /app
-      # This ensures all necessary files (data, src, scripts) are available to the agent
       - .:/app
-    restart: always # Ensure the service restarts if it crashes
+    restart: always 
 
-  # Watchdog Monitor service
   watchdog-monitor:
-    # Build the image using your Dockerfile (which includes your project code and dependencies)
+    
     build:
       context: .
       dockerfile: Dockerfile
     restart: always
     environment:
-      # Configure the monitor script to connect to the Prefect server API
-      # Use the service name 'prefect-server' and port 4200
-      PREFECT_API_URL: http://prefect-server:4200/api # Monitor connects to the server's API on port 4200
-      # Ensure the monitor script can find your project code
+      PREFECT_API_URL: http://prefect-server:4200/api 
       PYTHONPATH: /app
-      # Set PROJECT_ROOT for the monitor script
-      PROJECT_ROOT: /app # Added PROJECT_ROOT environment variable
-      # Set the deployment and flow names as environment variables for the monitor script
+      PROJECT_ROOT: /app 
       PREFECT_DEPLOYMENT_NAME: marketing-pipeline-docker
       PREFECT_FLOW_NAME: Marketing Analytics Pipeline
     volumes:
-      # Mount your entire project code into the container at /app
       - .:/app
     depends_on:
-      # Ensure the Prefect server is running before the monitor tries to trigger flows
       prefect-server:
         condition: service_started
-    # Command to run the watchdog monitor script
     command: python scripts/monitor_data.py
 
-# Define persistent volumes
 volumes:
-  prefect-server-data: # Volume for Prefect server metadata
-  prefect-agent-data: # Volume for Prefect agent data (less critical)
+  prefect-server-data: 
+  prefect-agent-data: 
