@@ -7,3 +7,5 @@ plotly==5.22.0
 pyarrow==16.1.0
 pytest
 prefect<3
+watchdog==4.0.1
+dotenv

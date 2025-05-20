@@ -1,18 +1,18 @@
 ###
 ### A complete description of a Prefect Deployment for flow 'Marketing Analytics Pipeline'
 ###
-name: marketing-pipeline-local
+name: marketing-pipeline-docker
 description: null
-version: e74f357bac43a07b2333ac6495b0b471
+version: a1e22fb34b0b401c235f738b497958eb
 # The work queue that will handle this deployment's runs
 work_queue_name: default
 work_pool_name: null
 tags: []
 parameters: {}
 schedule: null
-schedules: []
 is_schedule_active: null
-infra_overrides: {}
+infra_overrides:
+  env.PROJECT_ROOT: /app
 infrastructure:
   type: process
   env: {}
@@ -30,7 +30,7 @@ infrastructure:
 flow_name: Marketing Analytics Pipeline
 manifest_path: null
 storage: null
-path: /Users/tkzhk/workspace/marketing_pipeline_project
+path: /app
 entrypoint: scripts/run_pipeline.py:marketing_pipeline_flow
 parameter_openapi_schema:
   title: Parameters
@@ -38,6 +38,4 @@ parameter_openapi_schema:
   properties: {}
   required: null
   definitions: null
-timestamp: '2025-05-19T20:59:38.706186+00:00'
-triggers: []
-enforce_parameter_schema: null
+timestamp: '2025-05-20T14:16:56.478948+00:00'

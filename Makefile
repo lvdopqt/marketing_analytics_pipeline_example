@@ -2,38 +2,32 @@
 
 # Define the default target when you just run 'make'
 .DEFAULT_GOAL := help
+PROJECT_ROOT := $(shell pwd)
 
 # --- Targets ---
 
 # Display help message
 help:
 	@echo "Usage:"
-	@echo "  make install-requirements - Install Python dependencies from requirements.txt"
 	@echo "  make generate-data        - Run the script to generate mock data"
-	@echo "  make run-pipeline         - Execute the main marketing pipeline script using Prefect"
 	@echo "  make run-dashboard        - Run the Streamlit analytics dashboard"
-	@echo "  make prefect-ui           - Start the Prefect UI (Orion server)"
-	@echo "  make deploy-prefect       - Build and apply the Prefect deployment"
-	@echo "  make start-agent          - Start the Prefect agent to execute flow runs"
+	@echo "  make up                   - Run the full service"
 
-# Install Python dependencies from requirements.txt
-install-requirements:
-	@echo "Installing Python dependencies..."
-	pip install -r requirements.txt
-	@echo "Dependencies installed."
+# Run the service
+up:
+	@echo "Starting prefect-ui, prefect-agent, and file watchdog with docker-compose"
+	docker-compose up -d
+
+# Stop the service
+down:
+	@echo "Stopping prefect-ui, prefect-agent, and file watchdog with docker-compose"
+	docker-compose down
 
 # Generate mock data
 generate-data:
 	@echo "Generating mock data..."
 	python scripts/generate_mock_data.py
 	@echo "Mock data generation complete."
-
-# Execute the main marketing pipeline script
-run-pipeline:
-	@echo "Running the marketing pipeline..."
-	# Execute run_pipeline as a module from the project root
-	PREFECT_PROFILE=default python -m scripts.run_pipeline
-	@echo "Marketing pipeline execution finished."
 
 # Run the Streamlit analytics dashboard
 run-dashboard:
@@ -44,24 +38,15 @@ run-dashboard:
 test:
 	pytest .
 
-# Start the Prefect UI (Orion server)
-prefect-ui:
-	@echo "Starting the Prefect UI..."
-	prefect server start
-
-# Build and apply the Prefect deployment
-deploy-prefect: install-requirements
-	@echo "Building and applying Prefect deployment..."
-	# Build the deployment configuration and apply it to the Prefect server
-	prefect deployment build ./scripts/run_pipeline.py:marketing_pipeline_flow --name marketing-pipeline-local --apply
-	@echo "Prefect deployment applied."
-
-# Start the Prefect agent to execute flow runs
-start-agent: install-requirements
-	@echo "Starting the Prefect agent..."
-	# Start an agent that listens to the 'default' work queue in the 'default-agent-pool'
-	prefect agent start --pool default-agent-pool --work-queue default
-	@echo "Prefect agent started."
+clean:
+	@echo "Cleaning generated files..."
+	rm -rf data/processed/*
+	rm -rf data/reports/*
+	# Optional: remove __pycache__ and .pytest_cache
+	find . -type d -name "__pycache__" -exec rm -r {} +
+	find . -type d -name ".pytest_cache" -exec rm -r {} +
+	find . -type f -name "*.pyc" -delete
+	@echo "Cleaned."
 
 # Phony targets - prevent make from confusing targets with files of the same name
-.PHONY: help install-requirements generate-data run-pipeline run-dashboard prefect-ui deploy-prefect start-agent
+.PHONY: help up generate-data run-dashboard clean
