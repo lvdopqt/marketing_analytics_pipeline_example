@@ -42,11 +42,10 @@ clean:
 	@echo "Cleaning generated files..."
 	rm -rf data/processed/*
 	rm -rf data/reports/*
-	# Optional: remove __pycache__ and .pytest_cache
 	find . -type d -name "__pycache__" -exec rm -r {} +
 	find . -type d -name ".pytest_cache" -exec rm -r {} +
 	find . -type f -name "*.pyc" -delete
 	@echo "Cleaned."
 
 # Phony targets - prevent make from confusing targets with files of the same name
-.PHONY: help up generate-data run-dashboard clean
+.PHONY: help up down generate-data run-dashboard clean

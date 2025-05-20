@@ -33,49 +33,16 @@ The pipeline generates the following reports in the `data/reports` directory:
 
 ## Setup
 
-It is highly recommended to use a Python virtual environment to manage project dependencies.
+The project now uses Docker for orchestration, making setup and execution simpler.
 
-### Creating a Virtual Environment (`venv`)
+### Prerequisites
 
-1.  **Open your terminal or command prompt.**
-
-2.  **Navigate to the project's root directory** (the directory containing this `README.md` file).
-    ```bash
-    cd path/to/your/marketing_pipeline_project
-    ```
-
-3.  **Create the virtual environment:**
-    ```bash
-    python -m venv .venv
-    ```
-    This command creates a directory named `.venv` inside your project directory, containing a new Python environment.
-
-4.  **Activate the virtual environment:**
-    * On macOS and Linux:
-        ```bash
-        source .venv/bin/activate
-        ```
-    * On Windows:
-        ```bash
-        .venv\Scripts\activate
-        ```
-    You should see the name of your virtual environment (e.g., `(.venv)`) at the beginning of your terminal prompt, indicating that it's active.
-
-5.  **Install project dependencies:** With the virtual environment activated, install the required libraries using the `requirements.txt` file.
-    ```bash
-    pip install -r requirements.txt
-    ```
-    This will install all necessary packages into your isolated virtual environment.
-
-Remember to activate the virtual environment every time you open a new terminal session to work on the project.
-
-## Orchestration with Prefect
-
-This pipeline is orchestrated using [Prefect 2.0](https://docs.prefect.io/). Prefect allows defining pipeline steps as tasks and managing their execution, dependencies, logging, and monitoring.
+- [Docker](https://www.docker.com/get-started) and Docker Compose installed on your system
+- Make (available by default on Linux and macOS, can be installed on Windows)
 
 ## How to Run
 
-The project uses a `Makefile` to simplify running common tasks. Ensure you have `make` installed on your system.
+The project uses a `Makefile` to simplify running common tasks.
 
 1.  **Generating Mock Data**
 
@@ -90,52 +57,50 @@ The project uses a `Makefile` to simplify running common tasks. Ensure you have 
     This command executes the `scripts/generate_mock_data.py` script, which will generate CSV and JSON files for clients, ads, email campaigns, web traffic, and revenue in the `data/raw` folder. Running the command multiple times will add more data to the existing files, simulating data arriving over time.
     **NOTE**: There's already some mock data in the project for it to be ready to use
 
-2.  **Activate your virtual environment** (if you haven't already).
-
-3.  **Start the Prefect UI (Orion server):**
-    Open a separate terminal, activate your virtual environment, and run:
+2.  **Start all services:**
 
     ```bash
-    make prefect-ui
+    make up
     ```
-    This will start the Prefect server and UI, typically accessible at `http://127.0.0.1:4200`. Keep this terminal open while running the pipeline to monitor its execution in the UI.
 
-4.  **Deploy the Prefect Flow:**
-    In another terminal (with the virtual environment activated), run:
+    This command uses Docker Compose to start:
+    - The Prefect UI server
+    - A Prefect agent to execute scheduled flows
+    - A file watchdog to monitor incoming data files
+
+    All services run in containers, eliminating the need for manual virtual environment setup.
+
+3.  **Stop all services:**
 
     ```bash
-    make deploy-prefect
+    make down
     ```
-    This command builds the deployment configuration and registers it with your running Prefect server. You only need to run this again if you make changes to the flow definition (`scripts/run_pipeline.py`).
 
-5.  **Start the Prefect Agent:**
-    In a *third* terminal (with the virtual environment activated), run:
+    This will stop and remove all the Docker containers started by the `make up` command.
 
-    ```bash
-    make start-agent
-    ```
-    This command starts the Prefect agent. The agent connects to the Prefect server and looks for scheduled or triggered flow runs on the 'default' work queue. Keep this terminal open and running while you want your flows to be automatically executed by the Prefect server.
-
-6.  **Run the pipeline (Trigger from UI):**
-    After the UI, deployment, and agent are running, go to the Prefect UI (`http://127.0.0.1:4200`), navigate to "Deployments", find your "marketing-pipeline-local" deployment, and click the "Run" button to trigger a new flow run. The agent should then pick up this run and execute the tasks.
-
-7.  **Run the tests:**
-    ```bash
-    make test
-    ```
-    This command executes `pytest` to run all tests in the `tests/` directory. Ensure all tests pass before deploying or trusting the pipeline output.
-
-8.  **Run the Streamlit dashboard:**
+4.  **Run the Streamlit dashboard:**
     ```bash
     make run-dashboard
     ```
     This command starts the Streamlit server for the dashboard. Once started, it will provide a local URL (usually `http://localhost:8501`) that you can open in your web browser to interact with the dashboard.
 
+5.  **Run the tests:**
+    ```bash
+    make test
+    ```
+    This command executes `pytest` to run all tests in the `tests/` directory. Ensure all tests pass before deploying or trusting the pipeline output.
+
+6.  **Clean generated files:**
+    ```bash
+    make clean
+    ```
+    This command removes all generated files in the `data/processed/` and `data/reports/` directories, as well as Python cache files.
+
 ## Project Structure
 
 ```
+├── config/                     # Configuration directory
 ├── data/                       # Directory for all data files
-│   ├── analytics.db            # SQLite database file for the dashboard
 │   ├── processed/              # Directory for processed temporary data output (e.g., Parquet files)
 │   ├── raw/                    # Directory for raw, source data files
 │   │   ├── clients.csv         # Raw client data
@@ -150,12 +115,16 @@ The project uses a `Makefile` to simplify running common tasks. Ensure you have 
 │       ├── ctr_trends_report.csv               # Report on CTR trends over time
 │       ├── daily_client_spend_report.csv       # Report on daily spend per client
 │       └── total_clicks_by_platform_report.csv # Report on total clicks per platform
-├── Makefile                    # Defines standard commands for project tasks (install, run, deploy, etc.)
+├── docker-compose.yml          # Docker Compose configuration for services
+├── Dockerfile                  # Dockerfile for building the main application image
+├── Dockerfile.agent            # Dockerfile for building the Prefect agent image
+├── Makefile                    # Defines standard commands for project tasks (up, down, generate-data, etc.)
 ├── marketing_pipeline_flow-deployment.yaml # Prefect deployment configuration file
 ├── README.md                   # Project overview and instructions (this file)
 ├── requirements.txt            # Lists Python dependencies required for the project
 ├── scripts/                    # Contains executable Python scripts
 │   ├── generate_mock_data.py   # Script to generate dummy data for testing
+│   ├── monitor_data.py         # Script to monitor for new data files
 │   └── run_pipeline.py         # Main script defining and running the Prefect pipeline flow
 ├── src/                        # Contains the core Python source code modules
 │   ├── analytics/              # Modules for data analysis, reporting, and the dashboard
@@ -182,4 +151,12 @@ The project uses a `Makefile` to simplify running common tasks. Ensure you have 
 │   └── utils/                  # Utility functions (if any)
 │       └── file_utils.py       # Example utility file
 └── tests/                      # Contains test files for the project
+    ├── test_attribution.py     # Tests for attribution module
+    ├── test_dashboard.py       # Tests for dashboard module
+    ├── test_data_cleaning.py   # Tests for data cleaning module
+    ├── test_data_joining.py    # Tests for data joining module
+    ├── test_database_loader.py # Tests for database loader module
+    ├── test_file_loader.py     # Tests for file loader module
+    ├── test_metric_calculation.py # Tests for metric calculation module
+    └── test_report_generator.py   # Tests for report generator module
 ```
